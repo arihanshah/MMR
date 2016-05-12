@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>
+    MMR Vis
+</title>
+</head>
+<meta charset="utf-8">
+<style>
+
+.chart rect {
+  fill: #A0A0A0;
+}
+/*#8D86C9*/
+
+.chart rect:hover {
+    fill: #6C51CC;
+}
+/*#725AC1*/
+
+.chart text {
+  fill: white;
+  font: 10px sans-serif;
+  text-anchor: middle;
+}
+
+.d3-tip {
+  line-height: 1;
+  font-weight: bold;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  border-radius: 2px;
+}
+
+/* Creates a small triangle extender for the tooltip */
+.d3-tip:after {
+  box-sizing: border-box;
+  display: inline;
+  font-size: 10px;
+  width: 100%;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.8);
+  content: "\25BC";
+  position: absolute;
+  text-align: center;
+}
+
+/* Style northward tooltips differently */
+.d3-tip.n:after {
+  margin: -1px 0 0 0;
+  top: 100%;
+  left: 0;
+}
+
+#marchData {
+  font-family: HelveticaNeue-Light;
+  font-size: 16px;
+  color: #6C51CC;
+  width: 500px;
+  height: 100px;
+}
+
+</style>
+<select id="school">
+</select>
+<select id="season">
+</select>
+<div id="marchData">
+    <h> </h>
+    <p> Pick a team and season and find out how well they did!</p>
+</div>
+<svg class="chart"></svg>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.16/d3.min.js" charset="utf-8"></script>
+<script   src="https://code.jquery.com/jquery-2.2.2.min.js"   integrity="sha256-36cp2Co+/62rEAAYHLmRCPIych47CvdM+uTBJwSzWjI="   crossorigin="anonymous"></script>
+<script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+<script>
+
+
+function print(x) {
+    console.log(x);
+}
+
+var width = 960,
+    height = 500;
+
+var y = d3.scale.linear()
+    .range([height / 2, 0]);
+
+var chart = d3.select(".chart")
+    .attr("width", width)
+    .attr("height", height);
+
+var tip = d3.tip()
+    .attr('class', 'd3-tip')
+    .offset([-10, 0])
+    .html(function(d) {
+    return "<strong>Opponent:</strong> <span style='color:#6C51CC'>" + teamIndex[d.opponentID] + "</span>";
+  })
+
+  chart.call(tip);
+
+var teamIndex = {};
+
+d3.json('/teams', function(error, teamData) {
+    //console.log(teamData);
+    for (var i = 0; i < teamData.teams.length; i++) {
+        teamIndex[teamData.teams[i][0]] = teamData.teams[i][1];
+        //console.log(teamData.teams[i][0]);
+    }
+    teamData.teams.unshift([-1, "Select Team..."]);
+    //console.log(teamIndex);
+    d3.select('#school').selectAll("option").data(teamData.teams)
+    .enter().append("option")
+    .attr("value", function(d) {return d[0];})
+    .text(function(d) { return d[1];})
+    .attr("disabled", function(d) {return (d[0] === -1) ? "disabled" : null;})
+    .attr("selected", function(d) {return (d[0] === -1) ? "disabled" : null;})
+});
+d3.json('/seasons', function(error, seasonData) {
+    seasonData.seasons.unshift([-1, "Select Season..."]);
+
+    d3.select('#season').selectAll("option").data(seasonData.seasons)
+    .enter().append("option")
+    .attr("value", function(d) {return d[0];})
+    .text(function(d) { return d[1];})
+    .attr("disabled", function(d) {return (d[0] === -1) ? "disabled" : null;})
+    .attr("selected", function(d) {return (d[0] === -1) ? "disabled" : null;})
+});
+
+function redraw(teamID, seasonID) {
+    //console.log(teamID, seasonID);
+    if (!teamID) { return 0}
+
+    if (!seasonID || seasonID == -1) { return 0}
+    currName = teamIndex[teamID];
+    d3.json("/tourney/" + teamID + "/" + seasonID, function(error, rawdata) {
+        if (!rawdata.seeding.length) {
+            d3.select("#marchData")
+            .text("Your team didn't make the tournament.")
+        }
+        data = rawdata.seeding.map(function(d) {
+            //console.log(d[0]);
+            region = d[0][0];
+            seed = d[0].substring(1);
+            //console.log(seed);
+            //console.log(region);
+            //console.log(seasonID);
+            if (region == "W" || region == "X" || region == "Y" || region == "Z") {
+                d3.json("/location/" + region + "/" + seasonID, function(error, rawdata) {
+                    //console.log(rawdata.location[0][0]);
+                    //locationData = rawdata.location[0][0];
+                    //console.log("your team made the tournament and played in the " + locationData + " region.");
+                    area = rawdata.location[0].map(function(d) {
+                        var newLocationData = d;
+                        console.log(newLocationData);
+                        return newLocationData;
+                    });
+
+                })
+                d3.json("/opponent/" + teamID + "/" + seasonID, function (error, rawdata) {
+                    //print(rawdata);
+                    opponentData = rawdata.opponentStuff.map(function(d) {
+                        var returns = {};
+                        var opponentID = (d[0] == teamID ? d[2] : d[0]);
+                        var opponentName = teamIndex[opponentID];
+                        var spread = (d[0] == teamID ? d[1] - d[3] : d[3] - d[2])
+                        returns.spread = spread
+                        returns.opponentID = opponentID;
+                        returns.opponentName = opponentName;
+                        return returns;
+                    })
+                    var teamsBeat = []
+                    var teamsLostToChamp = []
+                    var numGames = Object.keys(opponentData).length;
+                    for (var i = 0; i < numGames - 1; i++) {
+                        teamsBeat.push(" " + opponentData[i].opponentName);
+                    }
+                    for (var i = 0; i < numGames; i++) {
+                        teamsLostToChamp.push(" " + opponentData[i].opponentName);
+                    }
+
+                    //d3.select("#marchData").text("Your team made the tournament! They played in the " + area + " region, and was seeded at " + seed);
+                    print(seed);
+                    var beg = (currName + " made the tournament! They played in the " + area + " region, and were a " + seed + " seed. ");
+                    if (numGames == 6 && opponentData[5].spread > 0) {
+                        d3.select("#marchData").text(currName + " won the championship! They played in the " + area + " region, and were a " + seed + " seed. They beat " + teamsLostToChamp + " to win it all.");
+                    } else if (numGames == 6 && opponentData[5].spread < 0) {
+                        d3.select("#marchData").text(beg + "They made it to the championship game, but lost to " + opponentData[5].opponentName + ". They beat " + teamsBeat + " to get there.");
+                    } else if (numGames == 5) {
+                        d3.select("#marchData").text(beg + "They made it to the Final Four but lost to " + opponentData[4].opponentName + ". They beat " + teamsBeat + " to get there.");
+                    } else if (numGames == 4) {
+                        d3.select("#marchData").text(beg + "They made it to the Elite Eight but lost to " + opponentData[3].opponentName + ". They beat " + teamsBeat + " to get there.");
+                    } else if (numGames == 3) {
+                        d3.select("#marchData").text(beg + "They made it to the Sweet Sixteen but lost to " + opponentData[2].opponentName + ". They beat " + teamsBeat + " to get there.");
+                    } else if (numGames == 2) {
+                        d3.select("#marchData").text(beg + "They made it to the Round of 32 but lost to " + opponentData[1].opponentName + ". They beat " + teamsBeat + " to get there.");
+                    } else if (numGames == 1) {
+                        d3.select("#marchData").text(beg + "They lost in the Round of 64 to " + opponentData[0].opponentName + ". ");
+                    }
+                })
+            }
+
+        })
+
+    })
+    d3.json("/bball/" + teamID + "/" + seasonID, function(error, rawdata) {
+        data = rawdata.data.map(function(d) {
+          //console.log(d[2] + ' ' + d[4] + '\n');
+            var returns = {};
+            var opponentID = (d[1] == teamID ? d[3] : d[1]);
+            var spread = (d[1] == teamID ? d[2] - d[4] : d[4] - d[2]);
+            returns.spread = spread;
+            returns.opponentID = opponentID;
+            return returns;
+        //  return (d[1] == teamID ? d[2] - d[4] : d[4] - d[2]);
+        });
+      //console.log(data[0].opponentID);
+      y.domain([0, d3.max(data, function(d) {return Math.abs(d.spread)})]);
+
+      var barWidth = width / data.length;
+      //console.log(barWidth);
+
+      var bar = chart.selectAll("g")
+          .data(data)
+      var newbars = bar.enter().append("g")
+          .attr("transform", function(d, i) { return "translate(" + i * barWidth + ",0)"; });
+
+      newbars.append("rect")
+          .attr("y", y(0))
+          .attr("height", 0 )
+          .attr("width", barWidth - 1)
+          .on("mouseover", tip.show)
+          .on("mouseout", tip.hide);
+
+      newbars.append("text")
+        //   .attr("x", barWidth / 2)
+        //   .attr("y", function(d) { return Math.min(height/2, y(d)) + 3; })
+        //   .attr("dy", ".75em")
+        //   .text(function(d) { return d; });
+      newbars.on("click", function(d) {
+          $('#school').val(d.opponentID);
+          $('#school').change();
+      })
+
+      bar.transition()
+            .attr("transform", function(d, i) { return "translate(" + i * barWidth + ",0)"; })
+            .ease("linear")
+            .duration(150);
+      bar.select('rect').transition()
+            .attr("y", function(d) { return Math.min(height/2, y(d.spread)); })
+            .attr("height", function(d) { return Math.abs(height / 2 - y(d.spread)); })
+            .attr("width", barWidth - 1)
+            .ease("linear")
+            .duration(150);
+      bar.select('text').transition()
+            .attr("x", barWidth / 2)
+            .attr("y", function(d) { return Math.min(height/2, y(d.spread)) + 3; })
+            .attr("dy", ".75em")
+            .text(function(d) { return d.spread })
+            .ease("linear")
+            .duration(150);
+
+    bar.exit().remove()
+
+    });
+}
+$("select").change(function() {
+    teamID = $("#school option:selected").attr("value")
+    seasonID = $("#season option:selected").attr("value")
+    redraw(teamID, seasonID);
+})
+</script>
+</html>
